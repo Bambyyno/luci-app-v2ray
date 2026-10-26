@@ -46,18 +46,20 @@ select_pkg_mgr() {
 	info "Package manager: $PKG_MGR"
 }
 
+# `wget | sh` leaves the script on stdin. apk/opkg must not read it, or the
+# rest of the script is consumed and BusyBox ash exits before the cache clear.
 pkg_update() {
 	case "$PKG_MGR" in
-		apk) apk update ;;
-		opkg) opkg update ;;
+		apk) apk update </dev/null ;;
+		opkg) opkg update </dev/null ;;
 		*) die "No package manager selected." ;;
 	esac
 }
 
 pkg_add() {
 	case "$PKG_MGR" in
-		apk) apk add "$@" ;;
-		opkg) opkg install "$@" ;;
+		apk) apk add "$@" </dev/null ;;
+		opkg) opkg install "$@" </dev/null ;;
 		*) die "No package manager selected." ;;
 	esac
 }
@@ -65,8 +67,8 @@ pkg_add() {
 pkg_installed() {
 	name="$1"
 	case "$PKG_MGR" in
-		apk) apk info -e "$name" >/dev/null 2>&1 ;;
-		opkg) opkg list-installed 2>/dev/null | grep -q "^${name} " ;;
+		apk) apk info -e "$name" </dev/null >/dev/null 2>&1 ;;
+		opkg) opkg list-installed </dev/null 2>/dev/null | grep -q "^${name} " ;;
 		*) die "No package manager selected." ;;
 	esac
 }
