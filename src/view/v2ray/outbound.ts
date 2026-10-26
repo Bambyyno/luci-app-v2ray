@@ -14,7 +14,46 @@
 "require ui";
 
 "require view/v2ray/include/custom as custom";
+"require view/v2ray/tools/base64 as base64";
 "require view/v2ray/tools/converters as converters";
+
+type UiText = {
+  getValue: () => string;
+};
+
+function textField(option: form.Value, sectionId: string): UiText | null {
+  const withUi = option as form.Value & {
+    getUIElement?: (section_id: string) => UiText;
+  };
+
+  if (typeof withUi.getUIElement !== "function") {
+    return null;
+  }
+
+  return withUi.getUIElement(sectionId) as UiText | null;
+}
+
+function subscriptionLinks(content: string): string {
+  const trimmed = content.replace(/^\uFEFF/, "").trim();
+  if (/vmess:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const compact = trimmed
+    .replace(/\s+/g, "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+  try {
+    const decoded = base64.decode(compact);
+    if (decoded && /vmess:\/\//i.test(decoded)) {
+      return decoded;
+    }
+  } catch (___) {
+    return trimmed;
+  }
+
+  return trimmed;
+}
 
 // @ts-ignore
 return L.view.extend<string[]>({
@@ -167,6 +206,49 @@ return L.view.extend<string[]>({
       ]);
     }
   },
+  handleSubscriptionUpdate: function (urlOption: form.Value) {
+    const field = textField(urlOption, "main");
+    const url = field ? String(field.getValue() || "").trim() : "";
+
+    if (!url) {
+      ui.addNotification(null, E("p", _("Subscription URL is required.")));
+      return;
+    }
+
+    return L.Request.request(L.url("admin/services/v2ray/request"), {
+      method: "post",
+      timeout: 50 * 1000,
+      query: {
+        url: url,
+        subscription: "1",
+        token: L.env.token,
+        sessionid: L.env.sessionid,
+      },
+    })
+      .then(
+        L.bind(function (res: LuCI.response) {
+          let data: {
+            code?: number;
+            content?: string;
+            message?: string;
+          } | null;
+          if (res.status !== 200 || !(data = res.json())) {
+            L.raise("Error", res.statusText);
+            return;
+          }
+
+          if (data.code || !data.content) {
+            L.raise("Error", data.message || _("Failed to request."));
+            return;
+          }
+
+          return this.handleImportSave(subscriptionLinks(data.content));
+        }, this)
+      )
+      .catch(function (e: Error) {
+        ui.addNotification(null, E("p", e.message));
+      });
+  },
   handleImportClick: function () {
     const textarea = new ui.Textarea("", {
       rows: 10,
@@ -239,6 +321,36 @@ return L.view.extend<string[]>({
       "v2ray",
       "%s - %s".format(_("V2Ray"), _("Outbound"))
     );
+
+    const sub = m.section(
+      form.NamedSection,
+      "main",
+      "v2ray",
+      _("Subscription")
+    );
+    sub.addremove = false;
+    sub.anonymous = true;
+
+    const urlOption = sub.option(
+      form.Value,
+      "subscription_url",
+      _("Subscription URL"),
+      _(
+        "VMess links from the subscription are added as outbounds. The saved hardware ID is sent as x-hwid and HWID."
+      )
+    );
+    urlOption.datatype = "string";
+    urlOption.placeholder = "https://";
+    urlOption.rmempty = true;
+
+    const updateBtn = sub.option(
+      form.Button,
+      "_update_subscription",
+      _("Update subscription")
+    );
+    updateBtn.inputstyle = "apply";
+    updateBtn.inputtitle = _("Update");
+    updateBtn.onclick = L.bind(this.handleSubscriptionUpdate, this, urlOption);
 
     const s = m.section(form.GridSection, "outbound");
     s.anonymous = true;

@@ -84,4 +84,10 @@ uci -q batch <<-EOF >/dev/null
 	commit firewall
 EOF
 
+hwid=$(uci -q get v2ray.main.hwid)
+if [ -z "$hwid" ] && [ -r /proc/sys/kernel/random/uuid ] ; then
+	uci -q set v2ray.main.hwid="$(cat /proc/sys/kernel/random/uuid)"
+	uci -q commit v2ray
+fi
+
 exit 0
