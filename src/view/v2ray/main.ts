@@ -9,11 +9,61 @@
 
 "require form";
 "require fs";
+"require uci";
 "require ui";
 "require v2ray";
 // "require view";
 
 "require view/v2ray/include/custom as custom";
+
+type UiField = {
+  setValue: (value: string) => void;
+};
+
+function randomUuid(): string {
+  const bytes = new Array<number>(16);
+  const cryptoObj = window.crypto;
+  if (cryptoObj && typeof cryptoObj.getRandomValues === "function") {
+    const buf = new Uint8Array(16);
+    cryptoObj.getRandomValues(buf);
+    for (let i = 0; i < 16; i++) {
+      bytes[i] = buf[i];
+    }
+  } else {
+    for (let i = 0; i < 16; i++) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = bytes
+    .map(function (b: number) {
+      return ("0" + b.toString(16)).slice(-2);
+    })
+    .join("");
+
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+function hwidField(option: form.Value, sectionId: string): UiField | null {
+  const withUi = option as form.Value & {
+    getUIElement?: (section_id: string) => UiField;
+  };
+
+  if (typeof withUi.getUIElement !== "function") {
+    return null;
+  }
+
+  return withUi.getUIElement(sectionId);
+}
 
 // @ts-ignore
 return L.view.extend<SectionItem[][]>({
@@ -43,10 +93,37 @@ return L.view.extend<SectionItem[][]>({
       });
   },
   load: function () {
-    return Promise.all([
-      v2ray.getSections("inbound"),
-      v2ray.getSections("outbound"),
-    ]);
+    const loadSections = function () {
+      return Promise.all([
+        v2ray.getSections("inbound"),
+        v2ray.getSections("outbound"),
+      ]);
+    };
+
+    return L.Request.request(L.url("admin/services/v2ray/hwid"), {
+      method: "post",
+      query: {
+        token: L.env.token,
+        sessionid: L.env.sessionid,
+      },
+    })
+      .then(function (res: LuCI.response) {
+        let data: { code?: number; hwid?: string } | null = null;
+        try {
+          data = res.json();
+        } catch (___) {
+          data = null;
+        }
+
+        return uci.load("v2ray").then(function () {
+          const saved = uci.get<string>("v2ray", "main", "hwid");
+          if (data && data.code === 0 && data.hwid && saved !== data.hwid) {
+            uci.set("v2ray", "main", "hwid", data.hwid);
+          }
+          return loadSections();
+        });
+      })
+      .catch(loadSections);
   },
   render: function ([inboundSections = [], outBoundSections = []] = []) {
     const m = new form.Map(
@@ -70,6 +147,48 @@ return L.view.extend<SectionItem[][]>({
 
     o = s.option(form.Flag, "enabled", _("Enabled"));
     o.rmempty = false;
+
+    const hwidOption = s.option(
+      form.Value,
+      "hwid",
+      _("Hardware ID"),
+      _(
+        "Stable device id sent as the x-hwid and HWID headers when a subscription is downloaded."
+      )
+    );
+    hwidOption.rmempty = false;
+    hwidOption.validate = function (__: string, value: string) {
+      if (
+        value &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          value
+        )
+      ) {
+        return _("Invalid hardware ID.");
+      }
+
+      return true;
+    };
+
+    o = s.option(
+      form.Button,
+      "_hwid_regenerate",
+      _("Regenerate Hardware ID"),
+      _(
+        "Replace the id, then Save & Apply. Subscription downloads use the saved value."
+      )
+    );
+    o.inputstyle = "apply";
+    o.inputtitle = _("Regenerate");
+    o.onclick = function () {
+      const hwid = randomUuid();
+      uci.set("v2ray", "main", "hwid", hwid);
+
+      const field = hwidField(hwidOption, "main");
+      if (field) {
+        field.setValue(hwid);
+      }
+    };
 
     o = s.option(
       form.Button,

@@ -8,9 +8,35 @@ Luci support for V2Ray
 
 [![Release Version](https://img.shields.io/github/release/kuoruan/luci-app-v2ray.svg)](https://github.com/kuoruan/luci-app-v2ray/releases/latest) [![Latest Release Download](https://img.shields.io/github/downloads/kuoruan/luci-app-v2ray/latest/total.svg)](https://github.com/kuoruan/luci-app-v2ray/releases/latest) [![Total Download](https://img.shields.io/github/downloads/kuoruan/luci-app-v2ray/total.svg)](https://github.com/kuoruan/luci-app-v2ray/releases)
 
-## Install
+## Установка на роутер одной командой
 
-### Install via OPKG (recommend)
+Этот форк ставится отдельно от фида kuoruan: в том фиде нет hardware id для подписки. На роутере под root нужен `wget` с HTTPS (`libustream-mbedtls` или `libustream-openssl`):
+
+```sh
+wget -qO- https://raw.githubusercontent.com/Bambyyno/luci-app-v2ray/cursor/subscription-hwid-7e4a/scripts/install.sh | sh
+```
+
+Скрипт скачивает эту ветку, копирует файлы LuCI и сбрасывает кэш LuCI. Уже существующий `/etc/config/v2ray` он не перезаписывает. Если hardware id ещё пустой, uci-defaults создаёт его. Повторный запуск обновляет приложение. На OpenWrt 22.03 и новее скрипт ставит `luci-lua-runtime`: контроллер написан на Lua.
+
+Зависимости ставятся тем менеджером пакетов, который есть на роутере. Если в `PATH` есть `apk`, скрипт вызывает `apk update` и `apk add`. Иначе, если есть `opkg`, вызывает `opkg update` и `opkg install`. Если нет ни `apk`, ни `opkg`, скрипт останавливается с ошибкой.
+
+Дальше в LuCI: **Services → V2Ray**. Hardware id — на странице Global Settings, адрес подписки — на Outbound. После смены id или адреса нажмите Save & Apply.
+
+Скрипт: [`scripts/install.sh`](scripts/install.sh). Собранный интерфейс, который он кладёт в `/www`, лежит в `prebuilt/` и обновляется командой `yarn package`.
+
+### Какой v2ray-core подходит
+
+LuCI собирает JSON формата V2Ray 4 и запускает бинарник так: `v2ray --config=...`. Перед стартом проверка идёт через `v2ray --test --config=...`.
+
+- **v2ray-core 4.x** подходит. Последний такой выпуск — 4.45.2.
+- **v2ray-core 5 и новее не подойдут.** У них другая командная строка (`v2ray run -config ...`) и другая схема JSON. Init-скрипт сочтёт конфиг неверным и не запустит процесс.
+- Поставить вместо него Xray и только поменять путь к файлу тоже нельзя: JSON ближе к v4, но этот init вызывает флаги именно v2ray 4.
+
+## Install from the kuoruan feed
+
+The feed below is the original project. It does not include the hardware id from this fork.
+
+### Install via OPKG
 
 1. Add new opkg key:
 
