@@ -18,6 +18,8 @@ wget -qO- https://raw.githubusercontent.com/Bambyyno/luci-app-v2ray/cursor/subsc
 
 Скрипт скачивает эту ветку, копирует файлы LuCI и сбрасывает кэш LuCI. Уже существующий `/etc/config/v2ray` он не перезаписывает. Если hardware id ещё пустой, uci-defaults создаёт его. Повторный запуск обновляет приложение. На OpenWrt 22.03 и новее скрипт ставит `luci-lua-runtime`: контроллер написан на Lua.
 
+Зависимости ставятся тем менеджером пакетов, который есть на роутере. Если в `PATH` есть `apk`, скрипт вызывает `apk update` и `apk add`. Иначе, если есть `opkg`, вызывает `opkg update` и `opkg install`. Если нет ни `apk`, ни `opkg`, скрипт останавливается с ошибкой.
+
 Дальше в LuCI: **Services → V2Ray**. Hardware id — на странице Global Settings, адрес подписки — на Outbound. После смены id или адреса нажмите Save & Apply.
 
 Скрипт: [`scripts/install.sh`](scripts/install.sh). Собранный интерфейс, который он кладёт в `/www`, лежит в `prebuilt/` и обновляется командой `yarn package`.

@@ -33,6 +33,44 @@ fetch() {
 	die "Could not download $url. Install wget with HTTPS (libustream-mbedtls or libustream-openssl)."
 }
 
+PKG_MGR=""
+
+select_pkg_mgr() {
+	if command -v apk >/dev/null 2>&1; then
+		PKG_MGR=apk
+	elif command -v opkg >/dev/null 2>&1; then
+		PKG_MGR=opkg
+	else
+		die "Neither apk nor opkg is installed. Install dependencies with one of them, then run this script again."
+	fi
+	info "Package manager: $PKG_MGR"
+}
+
+pkg_update() {
+	case "$PKG_MGR" in
+		apk) apk update ;;
+		opkg) opkg update ;;
+		*) die "No package manager selected." ;;
+	esac
+}
+
+pkg_add() {
+	case "$PKG_MGR" in
+		apk) apk add "$@" ;;
+		opkg) opkg install "$@" ;;
+		*) die "No package manager selected." ;;
+	esac
+}
+
+pkg_installed() {
+	name="$1"
+	case "$PKG_MGR" in
+		apk) apk info -e "$name" >/dev/null 2>&1 ;;
+		opkg) opkg list-installed 2>/dev/null | grep -q "^${name} " ;;
+		*) die "No package manager selected." ;;
+	esac
+}
+
 copy_tree() {
 	src="$1"
 	dst="$2"
@@ -118,10 +156,12 @@ else
 fi
 
 if [ -z "$DEST" ]; then
+	select_pkg_mgr
+	pkg_update || true
+
 	if [ ! -f /usr/lib/lua/luci/dispatcher.lua ] && [ ! -f /usr/lib/lua/luci/http.lua ]; then
 		info "Installing Lua LuCI runtime"
-		opkg update || true
-		opkg install luci-lua-runtime || opkg install luci-compat || info "Could not install luci-lua-runtime. The controller is Lua and needs it on OpenWrt 22.03 and later."
+		pkg_add luci-lua-runtime || pkg_add luci-compat || info "Could not install luci-lua-runtime. The controller is Lua and needs it on OpenWrt 22.03 and later."
 	fi
 
 	missing=""
@@ -132,12 +172,11 @@ if [ -z "$DEST" ]; then
 	command -v resolveip >/dev/null 2>&1 || missing="$missing resolveip"
 	if [ -n "$missing" ]; then
 		info "Installing$missing"
-		opkg update || true
 		# shellcheck disable=SC2086
-		opkg install $missing || info "Some packages did not install. Transparent proxy needs them; the LuCI pages can still open."
+		pkg_add $missing || info "Some packages did not install. Transparent proxy needs them; the LuCI pages can still open."
 	fi
 
-	if ! opkg list-installed 2>/dev/null | grep -q '^dnsmasq-full '; then
+	if ! pkg_installed dnsmasq-full; then
 		info "dnsmasq-full is not installed. The app's ipset rules need it. Replacing dnsmasq is left to you, because that restarts DNS."
 	fi
 
